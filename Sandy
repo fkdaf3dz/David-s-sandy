@@ -1,0 +1,356 @@
+-- David Martinez Project: Remastered V4 (Added Anime Screen Tint!)
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- Clean up old GUI & Effects for fresh execution
+if playerGui:FindFirstChild("EdgerunnerPremiumGui") then
+    playerGui.EdgerunnerPremiumGui:Destroy()
+end
+if Lighting:FindFirstChild("SandyTintEffect") then
+    Lighting.SandyTintEffect:Destroy()
+end
+
+-- Stats Configuration
+local CONFIG = {
+    NormalSpeed = 16,
+    NormalJump = 50,
+    ActiveSpeed = 50,
+    ActiveJump = 75,
+    GhostDuration = 6, 
+    SpawnRate = 0.08, -- Seconds between ghost spawns
+}
+
+local sandevistanActive = false
+local locked = false
+
+-- Screen Visual Effect Setup (The Edgerunners Green Tint)
+local sandyTint = Instance.new("ColorCorrectionEffect")
+sandyTint.Name = "SandyTintEffect"
+sandyTint.TintColor = Color3.fromRGB(255, 255, 255) -- Default normal
+sandyTint.Contrast = 0
+sandyTint.Saturation = 0
+sandyTint.Parent = Lighting
+
+-- Main ScreenGui
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "EdgerunnerPremiumGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+-- Remastered Switch Button
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Name = "ToggleBtn"
+toggleBtn.Size = UDim2.new(0, 120, 0, 48)
+toggleBtn.Position = UDim2.new(0.8, 0, 0.4, 0)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+toggleBtn.Text = ""
+toggleBtn.AutoButtonColor = false
+toggleBtn.Parent = screenGui
+
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(1, 0)
+btnCorner.Parent = toggleBtn
+
+local btnStroke = Instance.new("UIStroke")
+btnStroke.Color = Color3.fromRGB(0, 255, 180)
+btnStroke.Thickness = 2.5
+btnStroke.Transparency = 0.2
+btnStroke.Parent = toggleBtn
+
+local switchLabel = Instance.new("TextLabel")
+switchLabel.Size = UDim2.new(1, 0, 1, 0)
+switchLabel.BackgroundTransparency = 1
+switchLabel.Text = "SANDY: OFF"
+switchLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+switchLabel.TextSize = 14
+switchLabel.Font = Enum.Font.GothamBold
+switchLabel.Parent = toggleBtn
+
+-- Hold-to-Lock Menu
+local lockMenu = Instance.new("Frame")
+lockMenu.Name = "LockMenu"
+lockMenu.Size = UDim2.new(0, 160, 0, 95)
+lockMenu.Position = UDim2.new(1.1, 0, 0, 0)
+lockMenu.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+lockMenu.Visible = false
+lockMenu.Parent = toggleBtn
+
+local lockMenuCorner = Instance.new("UICorner")
+lockMenuCorner.CornerRadius = UDim.new(0, 8)
+lockMenuCorner.Parent = lockMenu
+
+local lockStroke = Instance.new("UIStroke")
+lockStroke.Color = Color3.fromRGB(0, 255, 180)
+lockStroke.Thickness = 2
+lockStroke.Parent = lockMenu
+
+local lockTitle = Instance.new("TextLabel")
+lockTitle.Size = UDim2.new(1, 0, 0, 35)
+lockTitle.BackgroundTransparency = 1
+lockTitle.Text = "MENU SETTINGS"
+lockTitle.TextColor3 = Color3.fromRGB(0, 255, 180)
+lockTitle.TextSize = 12
+lockTitle.Font = Enum.Font.GothamBold
+lockTitle.Parent = lockMenu
+
+local lockActionBtn = Instance.new("TextButton")
+lockActionBtn.Size = UDim2.new(0.9, 0, 0, 45)
+lockActionBtn.Position = UDim2.new(0.05, 0, 0, 38)
+lockActionBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+lockActionBtn.Text = "UNLOCKED\n(Tap to Lock)"
+lockActionBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+lockActionBtn.TextSize = 11
+lockActionBtn.Font = Enum.Font.GothamMedium
+lockActionBtn.Parent = lockMenu
+
+local actionCorner = Instance.new("UICorner")
+actionCorner.CornerRadius = UDim.new(0, 6)
+actionCorner.Parent = lockActionBtn
+
+-- Tweening UI Setup
+local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local function animateUI(targetColor, textColor, textContent)
+    TweenService:Create(toggleBtn, tweenInfo, {BackgroundColor3 = targetColor}):Play()
+    TweenService:Create(switchLabel, tweenInfo, {TextColor3 = textColor}):Play()
+    switchLabel.Text = textContent
+end
+
+-- Dragging Logic
+local dragging = false
+local dragStart, startPos
+
+toggleBtn.InputBegan:Connect(function(input)
+    if not locked and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+        dragging = true
+        dragStart = input.Position
+        startPos = toggleBtn.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and not locked and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        toggleBtn.Position = UDim2.new(
+            startPos.X.Scale, 
+            startPos.X.Offset + delta.X, 
+            startPos.Y.Scale, 
+            startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- Hold Detection
+local holdTimer = 0
+local holding = false
+
+toggleBtn.MouseButton1Down:Connect(function()
+    holding = true
+    holdTimer = tick()
+    task.spawn(function()
+        while holding do
+            if tick() - holdTimer >= 0.5 then
+                lockMenu.Visible = true
+                holding = false
+                break
+            end
+            task.wait(0.05)
+        end
+    end)
+end)
+
+toggleBtn.MouseButton1Up:Connect(function()
+    holding = false
+end)
+
+-- Locking Action
+lockActionBtn.MouseButton1Click:Connect(function()
+    locked = not locked
+    if locked then
+        lockActionBtn.Text = "LOCKED\n(Tap to Unlock)"
+        TweenService:Create(lockActionBtn, tweenInfo, {BackgroundColor3 = Color3.fromRGB(180, 50, 50)}):Play()
+    else
+        lockActionBtn.Text = "UNLOCKED\n(Tap to Lock)"
+        TweenService:Create(lockActionBtn, tweenInfo, {BackgroundColor3 = Color3.fromRGB(40, 40, 50)}):Play()
+    end
+    task.wait(0.1)
+    lockMenu.Visible = false
+end)
+
+-- Rainbow Color Generator
+local function getRainbowColor()
+    return Color3.fromHSV((tick() % 4) / 4, 1, 1) 
+end
+
+-- Highly Optimized Ghost Trail Creation
+local function createRainbowGhost(char)
+    pcall(function()
+        local clone = Instance.new("Model")
+        clone.Name = "GhostAfterimage"
+        clone.Parent = workspace
+        
+        for _, part in ipairs(char:GetChildren()) do
+            if part:IsA("BasePart") then
+                local partClone = part:Clone()
+                
+                -- Maximum Performance Flags
+                partClone.Anchored = true
+                partClone.CanCollide = false
+                partClone.CanQuery = false
+                partClone.CanTouch = false
+                partClone.CastShadow = false
+                partClone.Massless = true
+                
+                -- Visual Settings
+                partClone.Material = Enum.Material.Neon
+                partClone.Color = getRainbowColor()
+                partClone.Transparency = 0.35
+                
+                -- Cleanup Unnecessary Objects to save memory
+                for _, child in ipairs(partClone:GetChildren()) do
+                    if not child:IsA("SpecialMesh") then
+                        child:Destroy()
+                    end
+                end
+                
+                partClone.Parent = clone
+            end
+        end
+        
+        -- Smooth Fade Out Loop
+        task.spawn(function()
+            local fadeSteps = 60
+            local sleepTime = CONFIG.GhostDuration / fadeSteps
+            local startTrans = 0.35
+            
+            for i = 1, fadeSteps do
+                if not clone.Parent then break end
+                task.wait(sleepTime)
+                
+                pcall(function()
+                    local currentTrans = startTrans + ((1 - startTrans) * (i / fadeSteps))
+                    for _, p in ipairs(clone:GetChildren()) do
+                        if p:IsA("BasePart") then
+                            p.Transparency = currentTrans
+                        end
+                    end
+                end)
+            end
+            clone:Destroy()
+        end)
+    end)
+end
+
+-- Active Connection Reference
+local sandevistanLoop
+
+-- Sandevistan Toggle Switch Logic
+local function toggleSandevistan()
+    if lockMenu.Visible then return end
+    
+    local char = player.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    
+    sandevistanActive = not sandevistanActive
+    
+    if sandevistanActive then
+        -- Smooth Switch ON & Screen Tint ON
+        animateUI(Color3.fromRGB(0, 255, 180), Color3.fromRGB(0, 0, 0), "SANDY: ON")
+        btnStroke.Color = Color3.fromRGB(255, 255, 255)
+        
+        -- Tween the screen to the cyber-green tint
+        TweenService:Create(sandyTint, tweenInfo, {
+            TintColor = Color3.fromRGB(150, 255, 190), -- Cyber-green/cyan hue
+            Contrast = 0.15,                           -- Slight contrast boost
+            Saturation = -0.15                         -- Slightly desaturated for that anime feel
+        }):Play()
+        
+        humanoid.WalkSpeed = CONFIG.ActiveSpeed
+        humanoid.UseJumpPower = true
+        humanoid.JumpPower = CONFIG.ActiveJump
+        
+        local timer = 0
+        sandevistanLoop = RunService.RenderStepped:Connect(function(dt)
+            if sandevistanActive and char and char.Parent and humanoid then
+                local isMoving = humanoid.MoveDirection.Magnitude > 0
+                local state = humanoid:GetState()
+                local isAirborne = (state == Enum.HumanoidStateType.Jumping or state == Enum.HumanoidStateType.Freefall)
+                
+                if isMoving or isAirborne then
+                    timer = timer + dt
+                    if timer >= CONFIG.SpawnRate then
+                        timer = 0
+                        createRainbowGhost(char)
+                    end
+                end
+            else
+                if sandevistanLoop then sandevistanLoop:Disconnect() end
+            end
+        end)
+    else
+        -- Smooth Switch OFF & Screen Tint OFF
+        animateUI(Color3.fromRGB(20, 20, 30), Color3.fromRGB(255, 80, 80), "SANDY: OFF")
+        btnStroke.Color = Color3.fromRGB(0, 255, 180)
+        
+        -- Tween the screen back to normal colors
+        TweenService:Create(sandyTint, tweenInfo, {
+            TintColor = Color3.fromRGB(255, 255, 255),
+            Contrast = 0,
+            Saturation = 0
+        }):Play()
+        
+        humanoid.WalkSpeed = CONFIG.NormalSpeed
+        humanoid.JumpPower = CONFIG.NormalJump
+        
+        if sandevistanLoop then 
+            sandevistanLoop:Disconnect() 
+            sandevistanLoop = nil
+        end
+    end
+end
+
+toggleBtn.MouseButton1Click:Connect(toggleSandevistan)
+
+-- Auto-Reset on Respawn
+player.CharacterAdded:Connect(function(newChar)
+    sandevistanActive = false
+    if sandevistanLoop then sandevistanLoop:Disconnect() end
+    
+    animateUI(Color3.fromRGB(20, 20, 30), Color3.fromRGB(255, 80, 80), "SANDY: OFF")
+    btnStroke.Color = Color3.fromRGB(0, 255, 180)
+    
+    TweenService:Create(sandyTint, tweenInfo, {
+        TintColor = Color3.fromRGB(255, 255, 255),
+        Contrast = 0,
+        Saturation = 0
+    }):Play()
+    
+    task.wait(1)
+    local hum = newChar:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.WalkSpeed = CONFIG.NormalSpeed
+        hum.UseJumpPower = true
+        hum.JumpPower = CONFIG.NormalJump
+    end
+end)
+
+-- Initialize Base Stats on Script Execution
+local initialHum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+if initialHum then
+    initialHum.WalkSpeed = CONFIG.NormalSpeed
+    initialHum.UseJumpPower = true
+    initialHum.JumpPower = CONFIG.NormalJump
+end
